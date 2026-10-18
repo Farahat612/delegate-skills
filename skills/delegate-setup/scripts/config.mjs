@@ -298,6 +298,8 @@ function validateModelOrProvider(implementer, field, value, laneName, label) {
     // muse's relay token-validates --model the same shell-safe way (flag-injection
     // defense; its launch uses no shell on any platform).
     implementer === "muse" ||
+    // devin's relay applies the same shell-safe token check to --model and spawns no shell.
+    implementer === "devin" ||
     // codex (and any other win32 shell:true relay) must not accept cmd metacharacters in -m.
     implementer === "codex" ||
     IMPLEMENTER_BY_KEY[implementer]?.winShell

@@ -22,7 +22,7 @@ export function installShim(h) {
       join(windir, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe"),
       join(windir, "Microsoft.NET", "Framework", "v4.0.30319", "csc.exe"),
     ].find((p) => existsSync(p));
-    h.check("windows: the in-box C# compiler exists (builds the native fake for agy/kimi/muse/qoder/vibe/aider/oz/omp)", Boolean(csc));
+    h.check("windows: the in-box C# compiler exists (builds the native fake for agy/kimi/muse/qoder/vibe/aider/oz/omp/devin)", Boolean(csc));
     if (csc) {
       const csFile = join(shimDir, "fake-cli.cs");
       copyFileSync(join(fixturesDir, "fake-cli.cs"), csFile);
@@ -38,6 +38,8 @@ export function installShim(h) {
         copyFileSync(join(shimDir, "kimi.exe"), join(shimDir, "oz.exe"));
         copyFileSync(join(shimDir, "kimi.exe"), join(shimDir, "omp.exe"));
         copyFileSync(join(shimDir, "kimi.exe"), join(shimDir, "muse.exe"));
+        // devin ships as a native executable and the relay spawns it without a shell.
+        copyFileSync(join(shimDir, "kimi.exe"), join(shimDir, "devin.exe"));
       } else {
         console.error(`${compiled.stdout ?? ""}${compiled.stderr ?? ""}`);
       }

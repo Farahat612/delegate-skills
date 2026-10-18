@@ -405,6 +405,24 @@ export const IMPLEMENTERS = Object.freeze([
     winShell: false,
 
   },
+  {
+    key: "devin",
+    skill: "devin-delegate",
+    binary: "devin",
+    versionArgs: ["--version"],
+    // `devin auth status` prints "Logged in (via Devin)." first when signed in. The
+    // signed-out wording is unverified, so a miss stays unknown rather than false.
+    authProbe: { args: ["auth", "status"], successPattern: /^Logged in\b/m },
+    // `devin models list` is a grouped, human-formatted catalog with pricing per row,
+    // not a stable identifier list, so it is documented in the skill instead of parsed.
+    modelProbe: null,
+    // No documented local session store path is verified.
+    usageProbe: null,
+    // permissionMode stays relay-only: the relay derives it from readOnly, and smart or
+    // dangerous are per-dispatch opt-ins, never a standing lane dial.
+    supports: ["model", "timeout", "readOnly"],
+    winShell: false,
+  },
 ]);
 
 /** Prototype-free map so names like "toString" cannot pass as implementers. */

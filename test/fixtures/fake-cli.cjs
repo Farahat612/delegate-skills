@@ -282,6 +282,40 @@ if (process.env.SMOKE_MODE === "zcode-garbled") {
   console.log("not json at all");
   process.exit(0);
 }
+if (["devin-success", "devin-rejected", "devin-rejected-silent"].includes(process.env.SMOKE_MODE)) {
+  // Devin print mode: the brief arrives via --prompt-file, the final response is plain
+  // stdout, and --export <path> receives an ATIF trajectory carrying the session id.
+  const promptAt = args.indexOf("--prompt-file");
+  const brief = promptAt !== -1 ? fs.readFileSync(args[promptAt + 1], "utf8") : null;
+  if (process.env.SMOKE_ARGS_FILE) fs.writeFileSync(process.env.SMOKE_ARGS_FILE, JSON.stringify({ args, brief, cwd: process.cwd() }));
+  const rejected = process.env.SMOKE_MODE !== "devin-success";
+  const exportAt = args.indexOf("--export");
+  if (exportAt !== -1) {
+    fs.writeFileSync(args[exportAt + 1], JSON.stringify({
+      schema_version: "ATIF-v1.7",
+      session_id: "smoke-session",
+      agent: { name: "devin", version: "0.0.0", model_name: "SWE-2 High" },
+      steps: [
+        { step_id: 1, source: "user", message: brief },
+        {
+          step_id: 2,
+          source: "agent",
+          message: "",
+          model_name: "swe-2-high",
+          tool_calls: [{ tool_call_id: "exec:0", function_name: "exec", arguments: { command: "npm test" } }],
+          observation: { results: [{ source_call_id: "exec:0", content: rejected ? "Tool execution was rejected by the user" : "ok" }] },
+        },
+        ...(rejected ? [] : [{ step_id: 3, source: "agent", message: "fake devin completed", model_name: "swe-2-high", tool_calls: [] }]),
+      ],
+      final_metrics: { total_prompt_tokens: 7, total_completion_tokens: 2, total_steps: 3 },
+    }));
+  }
+  if (process.env.SMOKE_MODE === "devin-rejected") {
+    console.error("warning: rejected a tool call that requires confirmation. Running in non-interactive mode. Use --permission-mode dangerous to auto-approve all tools.");
+  }
+  if (!rejected) console.log("fake devin completed");
+  process.exit(0);
+}
 if (process.env.SMOKE_MODE === "qoder-success") {
   fs.writeFileSync(process.env.SMOKE_ARGS_FILE, JSON.stringify(args));
   console.log(JSON.stringify({

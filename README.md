@@ -71,6 +71,7 @@ Skip setup when you want one implementer or one-off dials. Pick the skill for a 
 | [`codex-delegate`](skills/codex-delegate/SKILL.md) | [OpenAI Codex](https://github.com/openai/codex) (`codex`) | `--sandbox workspace-write` | `--read-only` | `--resume-last`, `--session <id>` |
 | [`commandcode-delegate`](skills/commandcode-delegate/SKILL.md) | [Command Code](https://commandcode.ai/docs/headless) (`cmd`; `cmdc` on Windows) | `--yolo` — the only headless write state; no sandbox [^commandcode] | `--read-only` (withheld tools + `plan`) | `--continue-last`, `--session <id>` |
 | [`cursor-delegate`](skills/cursor-delegate/SKILL.md) | [Cursor Agent](https://cursor.com/cli) (`cursor-agent`) | `--force`; `--no-force` withholds command approval | `--read-only` (plan mode) | `--resume-last`, `--session <id>` |
+| [`devin-delegate`](skills/devin-delegate/SKILL.md) | Devin CLI (`devin`) | `accept-edits` permission mode; `smart`/`dangerous` opt-in; free SWE-2 model by default [^devin] | `--read-only` (`auto` permission mode) | `--resume-last`, `--session <id>` |
 | [`grok-delegate`](skills/grok-delegate/SKILL.md) | Grok Build (`grok`) | workspace-scoped; `--full-access` opt-in | `--read-only` — best-effort [^grok] | `--resume-last`, `--session <id>` |
 | [`kimi-delegate`](skills/kimi-delegate/SKILL.md) | [Kimi Code](https://moonshotai.github.io/kimi-code/en/) (`kimi`) | `auto permission mode`, always | — [^none] | `--resume-last`, `--session <id>` |
 | [`muse-delegate`](skills/muse-delegate/SKILL.md) | Muse Code (`muse`) | `--disable-approval` (sandbox on); not `--yolo` [^muse] | `--read-only` (`--disable-write` + `--disable-shell`) | `--session <id>` (no headless `--resume-last`) |
@@ -108,6 +109,15 @@ is configurable through it.
 cannot hang on a tool-approval prompt. `--read-only` adds `--disable-write` and `--disable-shell`.
 `--yolo` is not the default and is not exposed. Upstream's launcher is Darwin/Linux only. Headless
 resume is `--session-id`; `muse resume` is TUI-only.
+
+[^devin]: The relay always passes `--model`, defaulting to `swe-2-high`, and refuses any model outside
+the SWE-2 ids `devin models list` tags `Free` unless `--allow-paid` is passed, so a run never spends
+account credits by accident. The free list is fixed in `relay.mjs` and cannot see a pricing change.
+Print mode cannot ask for confirmation: a tool call the permission mode does not approve (under
+`accept-edits`, shell commands that write files or run test runners) is rejected and ends the run
+with exit 0, which the relay reports as `failed`. Brief Devin to edit only with its file tools and
+run the gates yourself. The relay passes `--respect-workspace-trust false`, so `--cd` is the trust
+decision.
 
 [^zcode]: ZCode ships its CLI **inside the desktop app** — there is no `zcode` on PATH, no npm
 package, and the public docs cover only the GUI. The relay resolves it from
@@ -404,6 +414,21 @@ Per skill — platform, CLI version, and what the run exercised:
   version preflight, missing binary, the bounded `stderrTail` over a flooded stderr, and
   whole-process-tree timeout/abort cleanup. Upstream's launcher is UNIX-only. No Windows or Linux
   run is recorded.
+- `devin-delegate`: macOS, `devin` 3000.11.3, free SWE-2 models only: a `--read-only` (`auto`)
+  dispatch with `swe-2-medium` answered from the tree and left it clean (`touchedFiles: []`); a
+  default write dispatch (`accept-edits`, `swe-2-high`) created the briefed `hello.txt`, reported
+  `status: "completed"` and exit 0 with `touchedFiles` listing exactly that file, and left `HEAD`
+  untouched (the relay does not commit); a `--session <id>` resume with `swe-2-medium` applied a
+  delta brief that named the file only as "the file you created a moment ago"; the paid-model guard
+  exited 2 with no artifacts. The rejection path was exercised live: before the brief carried the
+  file-tools instruction, the same write dispatch had Devin write through `printf` in its shell, the
+  call was rejected and the relay reported `failed` with the rejection error (direct CLI probes
+  showed Devin exits 0 after such a rejection).
+  `sessionId`, `actualModel`, and `usage` came from the `--export` trajectory on every run.
+  Contract-tested: argv exactness, the model guard, permission-mode validation, lane dials, bounded
+  version preflight, missing binary, and whole-process-tree timeout/abort cleanup. No Windows or
+  Linux run is recorded; `--permission-mode smart`/`dangerous` and `--resume-last` are
+  contract-tested only through the relay.
 - `opencode-delegate`, `vibe-delegate` — contract-tested only: argument validation, bounded version
   preflight, missing binary, result parsing, and whole-process-tree timeout/abort cleanup. No
   end-to-end run is recorded here.
@@ -429,7 +454,7 @@ Per skill — platform, CLI version, and what the run exercised:
 
 Not yet verified: native Windows launches for a directly spawned `claude.exe` (the npm `claude.cmd`
 shim path has a run above), exact-head `cline`, `grok`, `kimi`, `muse`,
-`pi`, `qoder`, `vibe`, and `omp` (`codex`/`opencode`/`grok`/`commandcode` have contract-tested `.cmd` shim handling;
+`pi`, `qoder`, `vibe`, `omp`, and `devin` (`codex`/`opencode`/`grok`/`commandcode` have contract-tested `.cmd` shim handling;
 Cursor serializes a pre-joined, quoted command; Qoder and Vibe target their documented native executables).
 Claude's own shell sandbox is unsupported on native Windows regardless of launch mechanics, upstream
 Vibe officially targets UNIX, and Muse's upstream launcher is UNIX-only. A native Linux `cursor-agent` run is unverified. The full delegate →
