@@ -31,7 +31,7 @@ node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
 | `--lane <name>` | Fleet lane from `delegate-setup` config. Applies that lane's dials; fails if the lane's `implementer` is not this relay. Explicit dial flags win. |
 | `--model <name>` | Copilot model (default: copilot's own default, `auto`). Token-validated: letters, digits, `. _ : / -`. |
 | `--effort <level>` | Reasoning effort (`low`\|`medium`\|`high`\|`xhigh`\|`max`). Rejected before dispatch if unknown. |
-| `--read-only` | Read-only plan mode (`--mode plan`); works without `--allow-all-tools`. Mutually exclusive with `--allow-all-tools`. |
+| `--read-only` | Read-only run: passes `--allow-all-tools --deny-tool write --deny-tool shell --allow-all-paths`, so read tools run and file writes and shell commands are refused. MCP server tools stay allowed. Mutually exclusive with `--allow-all-tools`. |
 | `--allow-all-tools` | Full tool autonomy. Without this, headless tool calls are auto-denied and the relay reports `status: "failed"`. Mutually exclusive with `--read-only`. |
 | `--resume-last` | Resume the most recent session (`--continue`). |
 | `--session <id>` | Resume a specific session (`--resume=<id>`). Mutually exclusive with `--resume-last`. |
@@ -56,7 +56,11 @@ Artifacts live outside the repo by default, so they do not appear in `touchedFil
 
 - `schema`, `tool` (`"copilot"`), `status` (`completed` | `failed` | `timeout` | `aborted` | `copilot_unavailable`), `exitCode`, and `signal` (`null` unless the child died on a signal).
 - `workdir`, `model`, `effort`, `readOnly`, `allowAllTools`, `resumed`, `copilotVersion`,
-  `startedAt`, and `finishedAt`.
+  `startedAt`, and `finishedAt`. `allowAllTools` records the relay flag, so it is `false` on a
+  `--read-only` run even though that run passes copilot's `--allow-all-tools` under deny rules.
+- `deniedTools`: every denied tool call (first 200), in order: `tool` (copilot's tool name, or
+  `null` if no start event named it), `message` (the CLI's own denial text), and `expected`
+  (`true` only for a `--read-only` refusal by the relay's `write`/`shell` deny rules).
 - `sessionId` — parsed from the `result` event's `sessionId` field; available for resume.
 - `finalMessage` — text of the last non-ephemeral `assistant.message` event.
 - `touchedFiles` — `git status --porcelain` lines for the **final working tree under `--cd` only**,
@@ -67,8 +71,8 @@ Artifacts live outside the repo by default, so they do not appear in `touchedFil
   copilot emitted no non-ephemeral assistant message and `final.txt` was not created.
 - `stderrTail` — the last 20 non-empty stderr lines on any run that did not complete (`failed`,
   `timeout`, `aborted`).
-- `error` — present on denial failures (with the CLI's own denial message plus a hint to pass
-  `--allow-all-tools`), preflight failures, when the relay watchdog fires (`timeout`), and on an
+- `error` — present on denial failures (with the CLI's own denial message, plus a hint to pass
+  `--allow-all-tools` outside `--read-only`), preflight failures, when the relay watchdog fires (`timeout`), and on an
   `aborted` run.
 
 ## Waiting for completion
@@ -87,6 +91,12 @@ A pre-run usage error exits 2 and writes no result. A missing `copilot` exits 12
 - **`status: "failed"` with a denial error:** copilot auto-denied a tool call in headless mode.
   The error message includes the CLI's own denial text and a hint to pass `--allow-all-tools`.
   Re-dispatch with `--allow-all-tools` to grant full tool permissions.
+- **`--read-only` run with `deniedTools` entries marked `expected: true`:** copilot tried to write
+  a file or run a shell command and the deny rules refused it. The run still completes when copilot
+  answered; read `finalMessage` for what it could not do. If it gave no final answer, the run is
+  `failed` with `copilot was refused write/shell under --read-only and gave no final answer`. A
+  denial outside those rules (for example a URL permission) fails the run with
+  `copilot denied a tool call outside the --read-only write/shell rules: ...`.
 - **`status: "failed"`:** read `stderrTail`, `stderrPath`, and the tail of `events.jsonl`. Common
   causes: an unknown `--model`, expired credentials, or a provider error.
 - **`status: "failed"` with an `error` mentioning `version preflight`:** the bounded
@@ -114,7 +124,7 @@ The launch is equivalent to:
 
 ```bash
 copilot --output-format json --no-color --stream off \
-  [--mode plan] [--allow-all-tools] \
+  [--allow-all-tools [--deny-tool write --deny-tool shell --allow-all-paths]] \
   [--continue | --resume=<id>] \
   [--model <name>] [--effort <level>] \
   -p @<brief.txt>
@@ -135,7 +145,13 @@ hung or crashing CLI fails fast and explicitly instead of hanging the run.
 Copilot's JSONL events include ephemeral events (mcp status, skills_loaded, etc.) which the relay
 skips, `assistant.message` events whose `data.content` becomes `finalMessage`, and a final
 `result` event carrying `sessionId` and `usage.codeChanges`. Tool execution events with
-`success: false` and `error.code: "denied"` trigger the denial-detection path.
+`success: false` and `error.code: "denied"` trigger the denial-detection path. A refusal by a
+`--deny-tool` rule names the rule in its message (``Permission to run this tool was denied due to
+the following rules: `shell` ``, verified on copilot 1.0.98); a headless auto-deny names none
+(`Permission denied and could not request permission from user` on 1.0.78, `Permission denied
+because no interactive user response was available. ...` on 1.0.98). The relay treats only the first
+shape, naming only `write` and/or `shell`, as expected under `--read-only`; the tool name comes from
+the matching `tool.execution_start` event (`toolCallId` links the two).
 
 ## The commit boundary
 

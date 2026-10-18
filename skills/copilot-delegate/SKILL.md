@@ -28,8 +28,9 @@ The loop needs only a shell command and file access, so any comparable orchestra
 - The `copilot` CLI is not installed or authenticated.
 - You need a hard sandbox. Copilot exposes sandbox controls, but they are upstream-experimental
   (MXC-based, controlled via the `/sandbox` command and settings, disabled by default) — this relay
-  does not configure them. `--read-only` only disables edit tools (`--mode plan`); shell commands
-  still run. If project files must not change at all, dispatch against a clean or isolated worktree.
+  does not configure them. `--read-only` denies copilot's `write` and `shell` permission kinds;
+  MCP server tools stay allowed. If project files must not change at all, dispatch against a clean
+  or isolated worktree.
 
 ## Prerequisites (check once)
 
@@ -79,7 +80,7 @@ captures the JSONL event stream, and writes `result.json`.
 node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
 # choose a model:                    add --model <name>
 # set reasoning effort:              add --effort <level>
-# read-only planning pass:           add --read-only  (forces --mode plan)
+# read-only pass (no writes, no shell): add --read-only
 # full tool autonomy:                add --allow-all-tools
 # hard time limit (watchdog):        add --timeout 2h   (the 30m default suits brief runs)
 # resume a session:                  add --session <id>  or  --resume-last
@@ -124,10 +125,17 @@ but the relay detects the denial events and reports `status: "failed"` with the 
 message and a hint to pass `--allow-all-tools`. This is the honest default — the orchestrator sees
 the failure rather than a silent no-op.
 
-`--allow-all-tools` explicitly grants full tool autonomy. `--read-only` selects `--mode plan`,
-which disables edit tools so project files can't be changed by direct edits; it works without
-`--allow-all-tools`. Shell commands still run in plan mode, so it guards against edits, not
-against everything. The two flags are mutually exclusive.
+`--allow-all-tools` explicitly grants full tool autonomy. `--read-only` passes
+`--allow-all-tools --deny-tool write --deny-tool shell --allow-all-paths`: read tools run without
+prompts, while every file create/modify tool and every shell command is refused (copilot's deny
+rules take precedence over allow rules). `--allow-all-paths` lets copilot read the brief, which the
+relay keeps outside the repo. The deny rules name only the `write` and `shell` kinds, so MCP server
+tools stay allowed. The relay does not use copilot's `--mode plan`: in headless runs on copilot
+1.0.98 it did not reliably answer the brief. The two relay flags are mutually exclusive.
+
+Under `--read-only`, a tool call refused by those two deny rules is expected: the relay lists it in
+`deniedTools` with `expected: true` and the run still completes when copilot answers. It fails if
+copilot gives no final answer, and any other denial fails the run as in the default mode.
 
 Copilot also exposes sandbox controls, but they are upstream-experimental (MXC-based, controlled
 via the `/sandbox` command and settings, disabled by default). This relay does not configure them.

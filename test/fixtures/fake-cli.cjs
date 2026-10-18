@@ -495,6 +495,23 @@ if (["omp-success", "omp-error"].includes(process.env.SMOKE_MODE)) {
   console.log(JSON.stringify({ type: "tool.execution_complete", data: { success: false, error: { message: "Permission denied and could not request permission from user", code: "denied" } } }));
   console.log(JSON.stringify({ type: "result", sessionId: "copilot-session-denied", exitCode: 0, usage: { codeChanges: { linesAdded: 0, linesRemoved: 0, filesModified: [] } } }));
   process.exit(0);
+} else if (["copilot-read-only-denied", "copilot-read-only-silent", "copilot-read-only-auto-denied"].includes(process.env.SMOKE_MODE)) {
+  // Event shapes recorded from copilot 1.0.98: a --deny-tool rule refusal names
+  // the rule; the headless auto-deny does not.
+  const mode = process.env.SMOKE_MODE;
+  fs.writeFileSync(process.env.SMOKE_ARGS_FILE, JSON.stringify(args));
+  console.log(JSON.stringify({ type: "tool.execution_start", data: { toolCallId: "call_1", toolName: "bash", arguments: { command: "ls" } } }));
+  console.log(JSON.stringify({ type: "tool.execution_complete", data: { toolCallId: "call_1", success: false, error: {
+    message: mode === "copilot-read-only-auto-denied"
+      ? "Permission denied and could not request permission from user"
+      : "Permission to run this tool was denied due to the following rules: `shell`",
+    code: "denied",
+  } } }));
+  if (mode !== "copilot-read-only-silent") {
+    console.log(JSON.stringify({ type: "assistant.message", data: { content: "a.txt b.txt" }, ephemeral: false }));
+  }
+  console.log(JSON.stringify({ type: "result", sessionId: "copilot-session-ro", exitCode: 0 }));
+  process.exit(0);
 } else if (["cursor-success", "claude-success", "claude-read-only-write", "claude-read-only-clean", "claude-read-only-append", "claude-chunked"].includes(process.env.SMOKE_MODE)) {
   let brief = "";
   process.stdin.setEncoding("utf8");

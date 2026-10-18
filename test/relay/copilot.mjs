@@ -19,7 +19,7 @@ for (const scenario of [
   {
     name: "read only",
     relayArgs: ["--read-only"],
-    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--mode", "plan"],
+    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--allow-all-tools", "--deny-tool", "write", "--deny-tool", "shell", "--allow-all-paths"],
     readOnly: true,
     allowAllTools: false,
     resumed: false,
@@ -111,7 +111,64 @@ for (const scenario of [
     existsSync(join(outDir, "result.json")) &&
     h.result(outDir).status === "failed" &&
     h.result(outDir).error?.includes("auto-denied") &&
-    h.result(outDir).error?.includes("--allow-all-tools"));
+    h.result(outDir).error?.includes("--allow-all-tools") &&
+    h.result(outDir).deniedTools?.length === 1 &&
+    h.result(outDir).deniedTools[0].expected === false);
+}
+// --read-only: a refusal by the relay's own write/shell rules is expected and
+// does not fail a run that answered; no answer, or any other denial, fails.
+for (const [mode, expectedStatus, label] of [
+  ["copilot-read-only-denied", "completed", "rule denial with an answer completes"],
+  ["copilot-read-only-silent", "failed", "rule denial without an answer fails"],
+  ["copilot-read-only-auto-denied", "failed", "headless auto-deny still fails"],
+]) {
+  const outDir = join(h.scratch, `out-${mode}`);
+  const workDir = h.freshRepo(`work-${mode}`);
+  const argsFile = join(h.scratch, `args-${mode}`);
+  const run = spawnSync(process.execPath, [
+    h.relayPath("copilot"),
+    "--brief", h.briefPath,
+    "--cd", workDir,
+    "--out-dir", outDir,
+    "--read-only",
+  ], {
+    env: { ...h.baseEnv, SMOKE_MODE: mode, SMOKE_ARGS_FILE: argsFile },
+    encoding: "utf8",
+  });
+  const value = existsSync(join(outDir, "result.json")) ? h.result(outDir) : {};
+  const denial = value.deniedTools?.[0] ?? {};
+  h.check(`copilot read-only: ${label}`,
+    run.status === (expectedStatus === "completed" ? 0 : 1) &&
+    value.status === expectedStatus &&
+    value.readOnly === true &&
+    value.deniedTools?.length === 1 &&
+    denial.tool === "bash" &&
+    denial.expected === (mode !== "copilot-read-only-auto-denied") &&
+    (expectedStatus === "completed"
+      ? value.error === undefined && value.finalMessage === "a.txt b.txt"
+      : mode === "copilot-read-only-silent"
+        ? value.error?.includes("gave no final answer")
+        : value.error?.includes("outside the --read-only") && !value.error.includes("Pass --allow-all-tools")));
+}
+// Without --read-only the same rule denial is not expected and fails the run.
+{
+  const outDir = join(h.scratch, "out-rule-denied-default-copilot");
+  const workDir = h.freshRepo("work-rule-denied-default-copilot");
+  const argsFile = join(h.scratch, "args-rule-denied-default-copilot");
+  const run = spawnSync(process.execPath, [
+    h.relayPath("copilot"),
+    "--brief", h.briefPath,
+    "--cd", workDir,
+    "--out-dir", outDir,
+    "--allow-all-tools",
+  ], {
+    env: { ...h.baseEnv, SMOKE_MODE: "copilot-read-only-denied", SMOKE_ARGS_FILE: argsFile },
+    encoding: "utf8",
+  });
+  h.check("copilot rule denial outside --read-only: run fails",
+    run.status === 1 &&
+    h.result(outDir).status === "failed" &&
+    h.result(outDir).deniedTools?.[0]?.expected === false);
 }
 // --read-only and --allow-all-tools conflict → exit 2
 {
@@ -180,8 +237,8 @@ for (const scenario of [
     : [];
   h.check("copilot lane: readOnly dial applies without an override flag",
     control.status === 0 &&
-    controlArgs.includes("--mode") &&
-    controlArgs.includes("plan") &&
+    controlArgs.includes("--deny-tool") &&
+    controlArgs.includes("--allow-all-paths") &&
     h.result(controlOut).readOnly === true &&
     h.result(controlOut).allowAllTools === false);
   const outDir = join(h.scratch, "out-lane-copilot");
@@ -203,7 +260,8 @@ for (const scenario of [
   h.check("copilot lane: explicit --allow-all-tools wins over a readOnly lane",
     run.status === 0 &&
     args.includes("--allow-all-tools") &&
-    !args.some((a) => a === "--mode" || a === "plan") &&
+    !args.includes("--deny-tool") &&
+    !args.includes("--allow-all-paths") &&
     h.result(outDir).allowAllTools === true &&
     h.result(outDir).readOnly === false);
 }

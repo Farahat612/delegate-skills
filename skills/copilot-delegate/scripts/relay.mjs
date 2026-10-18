@@ -27,10 +27,17 @@
  * auto-denied by copilot, and the relay detects denial events and reports
  * `status: "failed"` with the CLI's own error message plus a hint to pass
  * `--allow-all-tools`. `--allow-all-tools` explicitly opts in to full tool
- * autonomy. `--read-only` selects `--mode plan`, which disables edit tools so
- * project files can't be changed by direct edits (shell commands still run),
- * and works without `--allow-all-tools`. `--read-only` and `--allow-all-tools`
- * are mutually exclusive.
+ * autonomy. `--read-only` passes `--allow-all-tools --deny-tool write
+ * --deny-tool shell --allow-all-paths`: read tools run, every file
+ * create/modify tool and every shell command is refused (copilot's deny rules
+ * win over allow rules), and the brief file outside the repo stays readable.
+ * Copilot's `--mode plan` is not used: headless, it did not reliably answer
+ * the brief (verified on copilot 1.0.98). Under `--read-only`, denials of the
+ * relay's own `write`/`shell` rules are expected: they are listed in
+ * `deniedTools` and fail the run only when copilot gives no final answer.
+ * Any other denial still fails the run. The deny rules name only the `write`
+ * and `shell` kinds, so MCP server tools stay allowed. `--read-only` and
+ * `--allow-all-tools` are mutually exclusive.
  *
  * On native Windows `copilot` is an npm-installed `.cmd` shim this relay
  * launches with shell:true. Model and effort values therefore accept only
@@ -48,9 +55,10 @@
  *   --model <name>          Copilot model (default: copilot's own default, `auto`).
  *                           Letters, digits, and . _ : / - only.
  *   --effort <level>        Reasoning effort for this run (low|medium|high|xhigh|max).
- *   --read-only             Read-only plan mode (`--mode plan`); works without
- *                           `--allow-all-tools`. Mutually exclusive with
- *                           `--allow-all-tools`.
+ *   --read-only             Read-only run: read tools allowed, `write` and
+ *                           `shell` denied (`--allow-all-tools --deny-tool
+ *                           write --deny-tool shell --allow-all-paths`).
+ *                           Mutually exclusive with `--allow-all-tools`.
  *   --allow-all-tools       Pass copilot's `--allow-all-tools` for full tool
  *                           autonomy in headless mode. Without this, headless
  *                           tool calls are auto-denied. Mutually exclusive with
@@ -68,15 +76,18 @@
  *
  * Result: written to <out-dir>/result.json and summarized on stdout —
  *   status, exitCode, signal, copilotVersion, model, effort, readOnly,
- *   allowAllTools, resumed, sessionId, finalMessage (the last non-ephemeral
- *   assistant message), touchedFiles (git porcelain, null if git cannot
- *   report), and paths to brief.txt, final.txt, events.jsonl, and stderr.txt.
+ *   allowAllTools (the relay flag; `--read-only` runs report false),
+ *   resumed, sessionId, finalMessage (the last non-ephemeral assistant
+ *   message), deniedTools (each denied tool call: tool, message, expected),
+ *   touchedFiles (git porcelain, null if git cannot report), and paths to
+ *   brief.txt, final.txt, events.jsonl, and stderr.txt.
  *
  * Exit codes: a pre-run usage error (bad/missing args, empty brief) exits 2
  * before any run and writes no result file; a missing `copilot` binary exits
  * 127; otherwise the exit code mirrors copilot's own (0 success, non-zero
- * failure), except a run whose event stream contains a tool denial exits 1
- * even if copilot exits 0. If the child dies on a signal, the exit code is 128
+ * failure), except a run whose event stream contains an unexpected tool
+ * denial (or, under --read-only, an expected denial with no final answer)
+ * exits 1 even if copilot exits 0. If the child dies on a signal, the exit code is 128
  * plus the signal number and `result.json` records the signal. Once the brief
  * validates, `result.json` is written on every outcome — completed, failed,
  * timeout (the --timeout watchdog fired), aborted (the relay itself was killed
@@ -112,6 +123,21 @@ const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 const EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 const IMPLEMENTER_KEY = "copilot";
+
+// --read-only denies these copilot permission kinds. A denial copilot
+// attributes only to these rules ("... denied due to the following rules:
+// `shell`", verified on copilot 1.0.98) is the read-only boundary working, not
+// a failure. A headless auto-deny names no rule ("Permission denied and could
+// not request permission from user" on 1.0.78, "Permission denied because no
+// interactive user response was available. ..." on 1.0.98) and stays a failure.
+const READ_ONLY_DENY_RULES = ["write", "shell"];
+
+function isReadOnlyRuleDenial(message) {
+  const match = /denied due to the following rules?:(.*)$/is.exec(String(message || ""));
+  if (!match) return false;
+  const rules = [...match[1].matchAll(/`([^`]+)`/g)].map((m) => m[1].trim());
+  return rules.length > 0 && rules.every((rule) => READ_ONLY_DENY_RULES.includes(rule));
+}
 
 // On resume (--resume=<id> / --continue), a bare @file reference in the resumed
 // session is echoed back instead of executed (verified on copilot 1.0.78); the
@@ -231,7 +257,7 @@ function parseArgs(argv) {
   }
   applyFleetLane(opts, flagged);
   if (opts.readOnly && opts.allowAllTools) {
-    fail("--read-only and --allow-all-tools are mutually exclusive; plan mode works without tool permissions");
+    fail("--read-only and --allow-all-tools are mutually exclusive; --read-only already allows read tools and denies write and shell");
   }
   if (opts.resumeLast && opts.session) {
     fail("--resume-last and --session are mutually exclusive; pass only one");
@@ -391,10 +417,10 @@ function buildArgv(opts, briefPath) {
   ];
 
   if (opts.readOnly) {
-    argv.push("--mode", "plan");
-  }
-
-  if (opts.allowAllTools) {
+    // Deny rules take precedence over --allow-all-tools. --allow-all-paths
+    // lets copilot read the brief, which lives outside the repo.
+    argv.push("--allow-all-tools", ...READ_ONLY_DENY_RULES.flatMap((rule) => ["--deny-tool", rule]), "--allow-all-paths");
+  } else if (opts.allowAllTools) {
     argv.push("--allow-all-tools");
   }
 
@@ -556,8 +582,12 @@ function dispatchToCopilot(opts, run, writeResult, onReady) {
 
   let sessionId = null;
   let lastAssistantMessage = "";
-  let denied = false;
-  let denialMessage = "";
+  // Denied tool calls, in order: { tool, message, expected }. The stored list
+  // is capped; the counters below still see every denial.
+  const deniedTools = [];
+  let deniedCount = 0;
+  let unexpected = null;
+  const toolNames = new Map();
   const stderrTail = [];
 
   const stdoutDecoder = new StringDecoder("utf8");
@@ -577,13 +607,25 @@ function dispatchToCopilot(opts, run, writeResult, onReady) {
       if (event.sessionId) sessionId = event.sessionId;
     }
 
+    if (event.type === "tool.execution_start" && event.data?.toolCallId && toolNames.size < 10_000) {
+      toolNames.set(event.data.toolCallId, event.data.toolName ?? null);
+    }
+
     // tool.execution_complete with success:false and error.code:"denied" — the
-    // headless auto-deny trap. copilot exits 0 but the run is a failure.
+    // headless auto-deny trap (copilot exits 0 but the run is a failure), or,
+    // under --read-only, the relay's own write/shell deny rules doing their job.
     // Copilot wraps the outcome in `data` (event.data.success, event.data.error).
     if (event.type === "tool.execution_complete" && event.data?.success === false) {
       if (event.data.error && event.data.error.code === "denied") {
-        denied = true;
-        denialMessage = event.data.error.message || "Permission denied";
+        const message = event.data.error.message || "Permission denied";
+        const denial = {
+          tool: toolNames.get(event.data.toolCallId) ?? null,
+          message,
+          expected: opts.readOnly && isReadOnlyRuleDenial(message),
+        };
+        deniedCount += 1;
+        if (!denial.expected && !unexpected) unexpected = denial;
+        if (deniedTools.length < 200) deniedTools.push(denial);
       }
     }
   });
@@ -708,20 +750,29 @@ function dispatchToCopilot(opts, run, writeResult, onReady) {
     const finalMessage = assembleFinal();
     const touchedFiles = gitTouchedFiles(opts.cd);
     // Denial trap: copilot exits 0 even when tool calls are denied headlessly.
-    // The relay catches the denial event and reports failed.
-    const deniedRun = denied && !watchdogFired;
+    // The relay catches the denial event and reports failed. Under --read-only
+    // a write/shell rule denial is expected; it fails the run only when copilot
+    // gave no final answer.
+    const silentReadOnly = !unexpected && deniedCount > 0 && !finalMessage.trim();
+    const deniedRun = (Boolean(unexpected) || silentReadOnly) && !watchdogFired;
     const succeeded = code === 0 && !watchdogFired && !deniedRun;
     const mapped = code ?? (constants.signals[signal] ? 128 + constants.signals[signal] : 1);
     const exitCode = succeeded ? 0 : mapped === 0 ? 1 : mapped;
-    const denialError = deniedRun
-      ? `copilot auto-denied a tool call in headless mode: ${denialMessage}. Pass --allow-all-tools to grant full tool permissions`
-      : null;
+    let denialError = null;
+    if (deniedRun && unexpected) {
+      denialError = opts.readOnly
+        ? `copilot denied a tool call outside the --read-only write/shell rules: ${unexpected.message}`
+        : `copilot auto-denied a tool call in headless mode: ${unexpected.message}. Pass --allow-all-tools to grant full tool permissions`;
+    } else if (deniedRun) {
+      denialError = "copilot was refused write/shell under --read-only and gave no final answer";
+    }
     const result = writeResult({
       status: succeeded ? "completed" : watchdogFired ? "timeout" : "failed",
       exitCode,
       signal: signal ?? null,
       sessionId,
       finalMessage,
+      deniedTools,
       touchedFiles,
       ...(succeeded ? {} : { stderrTail: stderrTail.slice(-20) }),
       ...(watchdogFired
@@ -777,10 +828,16 @@ function printSummary(result, resultPath) {
       "hint: something outside the relay terminated copilot; relay watchdogs and relay signals report timeout or aborted instead.",
     );
   }
-  if (result.readOnly) lines.push("mode: plan (read-only)");
+  if (result.readOnly) lines.push("mode: read-only (write and shell denied)");
   if (result.allowAllTools) lines.push("autonomy: --allow-all-tools");
   if (result.resumed) lines.push("mode: resumed an existing session");
   if (result.sessionId) lines.push(`session id (resume with: --session ${result.sessionId}): ${result.sessionId}`);
+  if (result.deniedTools?.length) {
+    lines.push(`denied tool calls (first ${result.deniedTools.length}):`);
+    for (const d of result.deniedTools.slice(0, 10)) {
+      lines.push(`  ${d.tool ?? "?"}${d.expected ? " (read-only rule)" : ""}: ${d.message}`);
+    }
+  }
   const touched = result.touchedFiles;
   if (touched === null) {
     lines.push("touched files: git unavailable - inspect the working tree directly");

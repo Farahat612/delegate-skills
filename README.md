@@ -80,7 +80,7 @@ Skip setup when you want one implementer or one-off dials. Pick the skill for a 
 | [`omp-delegate`](skills/omp-delegate/SKILL.md) | [Oh My Pi](https://github.com/can1357/oh-my-pi) (`omp`) | `--yolo` (`tools.approvalMode: yolo`); project `.omp` extras off unless `--approve` | `--read-only` (`read,grep,glob`) | `--resume-last`, `--session <id>` |
 | [`qoder-delegate`](skills/qoder-delegate/SKILL.md) | [Qoder](https://docs.qoder.com/en/cli/quick-start) (`qodercli`) | `auto` permission mode; bypass opt-in | `--permission-mode plan` | `--resume-last`, `--resume <id>` |
 | [`vibe-delegate`](skills/vibe-delegate/SKILL.md) | [Mistral Vibe](https://github.com/mistralai/mistral-vibe) (`vibe`) | `accept-edits`; `--full-access` opt-in | `--plan-only` (`plan` agent) | `--resume-last`, `--session <id>` |
-| [`copilot-delegate`](skills/copilot-delegate/SKILL.md) | [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) (`copilot`) | `--allow-all-tools` opt-in; headless auto-deny otherwise | `--read-only` (`--mode plan`) | `--resume-last`, `--session <id>` |
+| [`copilot-delegate`](skills/copilot-delegate/SKILL.md) | [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) (`copilot`) | `--allow-all-tools` opt-in; headless auto-deny otherwise | `--read-only` (`write` and `shell` denied) | `--resume-last`, `--session <id>` |
 | [`warp-delegate`](skills/warp-delegate/SKILL.md) | [Warp Agent CLI](https://docs.warp.dev/cli/) (`oz`) | full local tools — no sandbox, no permission modes [^none] | — [^none] | `--conversation <id>` |
 | [`zcode-delegate`](skills/zcode-delegate/SKILL.md) | [Z.AI ZCode](https://zcode.z.ai) (`zcode`) [^zcode] | `--mode yolo` | `--read-only` (`plan` mode) | `--resume-last`, `--session <id>` |
 
@@ -439,8 +439,15 @@ Per skill — platform, CLI version, and what the run exercised:
   `sessionId`/`finalPath`, bounded version preflight, missing binary, result parsing, and whole-process-tree
   timeout/abort cleanup. The contributor also reported a native Windows 3.0.51 edit run against the
   earlier positional-brief commit; that does not verify this exact stdin-based head on Windows.
-- `copilot-delegate` — Windows, `copilot` 1.0.78: `--read-only` plan-mode run completed with a clean
-  tree and captured session id; `--allow-all-tools` edit run created the requested file; the headless
+- `copilot-delegate` - macOS, `copilot` 1.0.98: `--read-only` (deny rules for `write` and `shell`)
+  runs answered a read-a-file brief correctly with a clean tree; a brief asking for a shell `ls`
+  completed from read tools after the `shell` rule refused `bash`; a brief asking to create a file
+  completed with no file created and copilot reporting that write access was denied, with both
+  refusals (`apply_patch` by `write`, `bash` by `shell`) recorded as expected in `deniedTools`. An
+  `--allow-all-tools` run created the requested file. Contract-tested: read-only argv, expected
+  rule denials, the no-answer failure, and other denials still failing.
+- `copilot-delegate` — Windows, `copilot` 1.0.78: `--read-only` run under the earlier `--mode plan`
+  argv completed with a clean tree and captured session id; `--allow-all-tools` edit run created the requested file; the headless
   auto-deny path was exercised live (denial detected from the data-wrapped event shape, run reported
   failed with the `--allow-all-tools` hint); `--session <id>` and `--resume-last` resume runs executed
   their delta briefs via the directive-wrapped `-p @<file>` prompt. Contract-tested: argv exactness
