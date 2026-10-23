@@ -423,6 +423,38 @@ export const IMPLEMENTERS = Object.freeze([
     supports: ["model", "timeout", "readOnly"],
     winShell: false,
   },
+  {
+    key: "hermes",
+    skill: "hermes-delegate",
+    binary: "hermes",
+    versionArgs: ["--version"],
+    // `hermes auth list` is a human-formatted table of pooled credentials, not a stable
+    // signed-in signal, so login state stays unknown rather than guessed.
+    authProbe: null,
+    // `hermes model` is an interactive picker; there is no listing command to parse.
+    modelProbe: null,
+    // Sessions live in Hermes's SQLite state under $HERMES_HOME, not in countable files.
+    usageProbe: null,
+    // No readOnly dial: Hermes has no sandbox and no read-only mode, and the relay refuses
+    // --read-only. `--yolo` is a per-dispatch opt-in, never a standing lane dial.
+    supports: ["provider", "model", "effort", "timeout"],
+    winShell: false,
+  },
+  {
+    key: "openclaw",
+    skill: "openclaw-delegate",
+    binary: "openclaw",
+    versionArgs: ["--version"],
+    // No offline signed-in signal: `openclaw models status` opens the agent database,
+    // which can need a migration, so login state stays unknown rather than guessed.
+    authProbe: null,
+    modelProbe: null,
+    usageProbe: null,
+    // No readOnly dial: `agent exec` has no read-only flag, and the relay refuses --read-only.
+    // `agent exec` keeps no session between runs, so there is nothing to resume either.
+    supports: ["model", "effort", "timeout"],
+    winShell: true,
+  },
 ]);
 
 /** Prototype-free map so names like "toString" cannot pass as implementers. */
@@ -438,6 +470,8 @@ export const AGY_EFFORT = Object.freeze(["low", "medium", "high"]);
 export const COPILOT_EFFORT = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
 export const OMP_THINKING = Object.freeze(["off", "auto", "minimal", "low", "medium", "high", "xhigh", "max"]);
 export const MUSE_EFFORT = Object.freeze(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+export const HERMES_EFFORT = Object.freeze(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+export const OPENCLAW_THINKING = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra"]);
 export const CODEX_SANDBOX = Object.freeze(["read-only", "workspace-write", "danger-full-access"]);
 export const GROK_SANDBOX = Object.freeze(["workspace", "read-only", "off"]);
 export const QODER_PERMISSION = Object.freeze([

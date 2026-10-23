@@ -2,14 +2,14 @@
 
 This repo is a [Skills CLI](https://github.com/vercel-labs/skills) package of **delegation skills** —
 skills that let an orchestrating agent drive a separate CLI coding agent as an implementer, then review
-and land the result. Nineteen implementer skills ship today: `claude-delegate` (Claude Code),
+and land the result. Twenty-one implementer skills ship today: `claude-delegate` (Claude Code),
 `cline-delegate` (Cline CLI), `codex-delegate` (OpenAI Codex), `opencode-delegate` (OpenCode),
 `agy-delegate` (Google Antigravity), `grok-delegate` (Grok Build), `kimi-delegate` (Kimi Code),
 `muse-delegate` (Muse Code),
 `qoder-delegate` (Qoder CLI), `vibe-delegate` (Mistral Vibe), `cursor-delegate` (Cursor Agent CLI),
 `pi-delegate` (Pi CLI), `omp-delegate` (Oh My Pi), `aider-delegate` (Aider), `copilot-delegate` (GitHub Copilot CLI),
 `warp-delegate` (Warp Agent CLI), `zcode-delegate` (Z.AI ZCode), `commandcode-delegate` (Command Code), and
-`devin-delegate` (Devin CLI); siblings like
+`devin-delegate` (Devin CLI), `hermes-delegate` (Hermes Agent), and `openclaw-delegate` (OpenClaw); siblings like
 `gemini-delegate` can be added
 later without renaming the repo. Two **utility** skills ship alongside them: `delegate-setup` (configure fleet lanes — setup only,
 never dispatches) and `codex-background` (Codex waiting boundary around registered existing relays).
@@ -23,7 +23,7 @@ jargon. Use these terms; don't invent synonyms.
 | --- | --- | --- |
 | **delegate** / **delegation** | the activity, and this skill family | "relay" (as the activity), "hand-off", "offload" |
 | **orchestrator** | the driving agent (Claude Code, …) | "controller", "driver" |
-| **implementer** | the separate agent (Claude, Cline, Codex, OpenCode, Antigravity, Grok, Kimi, Muse, Qoder, Vibe, Cursor, Pi, Oh My Pi, Aider, Copilot, Warp, ZCode, Command Code, Devin) | "worker", "sub-agent", "executor" |
+| **implementer** | the separate agent (Claude, Cline, Codex, OpenCode, Antigravity, Grok, Kimi, Muse, Qoder, Vibe, Cursor, Pi, Oh My Pi, Aider, Copilot, Warp, ZCode, Command Code, Devin, Hermes, OpenClaw) | "worker", "sub-agent", "executor" |
 | **brief** | the self-contained task spec sent to the implementer | "task file", "the prompt", "the spec" |
 | **gates** | the project's test/lint/build commands | "checks", "CI" |
 | **dispatch** | sending the brief to the implementer | "fire off", "kick off" |
@@ -51,6 +51,8 @@ jargon. Use these terms; don't invent synonyms.
 | `session`, `-p`/`--prompt`, `--output-format json` (JSONL), `tools`, `--allow-all-tools`, `mode plan`, `--resume`/`--continue`, `--model`, `--effort`, `copilot login` / env tokens, `sandbox` (experimental, MXC) | GitHub Copilot CLI's own terms — use verbatim when discussing `copilot` | don't paraphrase them |
 | `mode` (`build`/`edit`/`plan`/`yolo`), `session` (`sess_…`), `goal` (`--target`), `--attach`, `app-server`, `plugins`, `skills` | ZCode's own terms — use verbatim when discussing `zcode` | don't call `mode` a sandbox or a permission mode; never present `build`/`edit` as usable headlessly |
 | `-p` / `--print`, `--prompt-file`, `--permission-mode` (`auto`/`accept-edits`/`smart`/`dangerous`), `--respect-workspace-trust`, `--export` (trajectory), `-r`/`--resume`, `-c`/`--continue`, `--sandbox` (research preview), `devin models list`, `devin auth status`, `--cloud` | Devin CLI's own terms - use verbatim when discussing `devin` | `auto` is Devin's read-only-tools mode, not a sandbox; never call `dangerous` a default; the relay does not pass `--sandbox` or `--cloud`; "free" means the exact SWE-2 ids `devin models list` tags `Free` |
+| `chat`, `--query-file`, `-Q` / `--quiet`, `--format` (`text`/`stream-json`), `--in`, `--provider`, `--reasoning`, `--resume` (session id or `latest`), `--yolo`, `--max-turns`, `HERMES_HOME`, `hermes auth list`, `hermes fallback list`, `approvals.single_query_mode` | Hermes Agent's own terms - use verbatim when discussing `hermes` | Hermes has no sandbox and no read-only mode; never imply either. Its single-query mode blocks dangerous commands by itself, and `--yolo` bypasses that, so never call `--yolo` a default. `--reasoning` is the relay's `--effort`. The relay never passes `--worktree`, `--accept-hooks`, `--ignore-user-config`, or `--safe-mode` |
+| `agent exec`, `--message-file` (`-` is stdin), `--json` envelope, `--cwd`, `--timeout` (seconds, per model attempt), `--thinking`, `--model` (`provider/model`), `--fallback`, `--isolated`, `--state-dir`, `--config`, `--auth-env-only`, `--profile`, `OPENCLAW_STATE_DIR` / `OPENCLAW_CONFIG_PATH`, `openclaw models status`, `openclaw doctor` | OpenClaw's own terms - use verbatim when discussing `openclaw` | `agent exec` has no read-only flag and keeps no session to resume; never imply either. The agent sandbox is off unless the user's config enables it. `--thinking` is the relay's `--effort`; the relay's `--timeout` is a different, whole-run watchdog with the same spelling. `openclaw agent` without `exec` is Gateway-backed and is never invoked |
 
 Banned on sight: coined umbrella terms in user-facing surfaces (README headings, `skills.sh.json`
 titles); any reference to the author's local machine or config; model/version pins (`GPT-5.x` →
@@ -59,7 +61,7 @@ version a run was made against is what makes the claim checkable; and claims tha
 ("verified" without a run → hedge or cut). Every
 CLI flag, field, and command in the docs must match the installed implementer CLI (`claude` /
 `cline` / `codex` / `opencode` / `agy` / `grok` / `kimi` / `muse` / `qodercli` / `vibe` / `cursor-agent` / `pi` /
-`aider` / `copilot` / `oz` / `omp` / `zcode` / `cmd` / `devin`) and the skill's `relay.mjs`.
+`aider` / `copilot` / `oz` / `omp` / `zcode` / `cmd` / `devin` / `hermes` / `openclaw`) and the skill's `relay.mjs`.
 
 ## Conventions
 
@@ -122,7 +124,11 @@ CLI flag, field, and command in the docs must match the installed implementer CL
   Windows launch is registered against the compiled fake but has never been run live. Each changed
   launch still needs its own Windows smoke before claiming support. Upstream Vibe works on Windows
   but officially supports and targets UNIX; this repository's native Windows Cline stdin launch and
-  Vibe relay launch are unverified. Muse's upstream launcher is UNIX-only.
+  Vibe relay launch are unverified. Muse's upstream launcher is UNIX-only. `hermes` is spawned without a shell on every platform as a native
+  launcher, with the brief as `--query-file`. `openclaw` is an npm package, so on win32 it takes
+  `shell:true` for the `.cmd` shim after a `where.exe` lookup; its argv holds only fixed flags and
+  token-validated values, and the brief streams on stdin (`--message-file -`). Neither Windows launch
+  has been run live; both are registered against the fake (`hermes.exe` compiled, `openclaw.cmd` shim).
 - Keep the README's "Verification status" honest — claim only what's been run.
 
 ## Local Claude Code config

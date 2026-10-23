@@ -73,8 +73,10 @@ Skip setup when you want one implementer or one-off dials. Pick the skill for a 
 | [`cursor-delegate`](skills/cursor-delegate/SKILL.md) | [Cursor Agent](https://cursor.com/cli) (`cursor-agent`) | `--force`; `--no-force` withholds command approval | `--read-only` (plan mode) | `--resume-last`, `--session <id>` |
 | [`devin-delegate`](skills/devin-delegate/SKILL.md) | Devin CLI (`devin`) | `accept-edits` permission mode; `smart`/`dangerous` opt-in; free SWE-2 model by default [^devin] | `--read-only` (`auto` permission mode) | `--resume-last`, `--session <id>` |
 | [`grok-delegate`](skills/grok-delegate/SKILL.md) | Grok Build (`grok`) | workspace-scoped; `--full-access` opt-in | `--read-only` — best-effort [^grok] | `--resume-last`, `--session <id>` |
+| [`hermes-delegate`](skills/hermes-delegate/SKILL.md) | Hermes Agent (`hermes`) | single-query mode; Hermes blocks dangerous commands itself, `--yolo` opt-in; no sandbox [^hermes] | none [^hermes] | `--resume-last`, `--session <id>` |
 | [`kimi-delegate`](skills/kimi-delegate/SKILL.md) | [Kimi Code](https://moonshotai.github.io/kimi-code/en/) (`kimi`) | `auto permission mode`, always | — [^none] | `--resume-last`, `--session <id>` |
 | [`muse-delegate`](skills/muse-delegate/SKILL.md) | Muse Code (`muse`) | `--disable-approval` (sandbox on); not `--yolo` [^muse] | `--read-only` (`--disable-write` + `--disable-shell`) | `--session <id>` (no headless `--resume-last`) |
+| [`openclaw-delegate`](skills/openclaw-delegate/SKILL.md) | OpenClaw (`openclaw`) | `agent exec` defaults: `coding` tool profile, filesystem tools limited to `--cd`, agent sandbox off unless your config enables it [^openclaw] | none [^openclaw] | none (`agent exec` keeps no session) |
 | [`opencode-delegate`](skills/opencode-delegate/SKILL.md) | [OpenCode](https://opencode.ai) (`opencode`) | agent `build` (`--model` required) | `--read-only` (agent `plan`) | `--resume-last`, `--session <id>` |
 | [`pi-delegate`](skills/pi-delegate/SKILL.md) | [Pi](https://github.com/earendil-works/pi-mono) (`pi`) | full local tools — no sandbox, no permission modes [^none]; project trust opt-in | `--read-only` (`read,grep,find,ls`) | `--resume-last`, `--session <id>` |
 | [`omp-delegate`](skills/omp-delegate/SKILL.md) | [Oh My Pi](https://github.com/can1357/oh-my-pi) (`omp`) | `--yolo` (`tools.approvalMode: yolo`); project `.omp` extras off unless `--approve` | `--read-only` (`read,grep,glob`) | `--resume-last`, `--session <id>` |
@@ -118,6 +120,18 @@ Print mode cannot ask for confirmation: a tool call the permission mode does not
 with exit 0, which the relay reports as `failed`. Brief Devin to edit only with its file tools and
 run the gates yourself. The relay passes `--respect-workspace-trust false`, so `--cd` is the trust
 decision.
+
+[^hermes]: Hermes has no sandbox and no read-only mode, so the relay refuses `--read-only`. Single-query
+mode has nobody to answer an approval prompt, so Hermes itself blocks the commands its dangerous-command
+patterns match unless its own config says otherwise; `--yolo` passes Hermes's flag and bypasses those
+prompts. Hermes loads its memory, rules, and the working directory's `AGENTS.md`. The account is picked
+by `HERMES_HOME` in the environment, and with no `--model` Hermes uses its own configured fallback chain.
+
+[^openclaw]: OpenClaw's `agent exec` has no read-only flag in the installed release, so the relay refuses
+`--read-only`. A shell command the agent runs is not confined to the working directory, and anything the
+user's own OpenClaw config sets wins over the exec defaults. The brief streams on stdin, the account is
+picked by `OPENCLAW_STATE_DIR` / `OPENCLAW_CONFIG_PATH` in the environment, and `agent exec` keeps no
+session, so there is no resume. `sessionId` in the result is informational.
 
 [^zcode]: ZCode ships its CLI **inside the desktop app** — there is no `zcode` on PATH, no npm
 package, and the public docs cover only the GUI. The relay resolves it from
@@ -429,6 +443,24 @@ Per skill — platform, CLI version, and what the run exercised:
   version preflight, missing binary, and whole-process-tree timeout/abort cleanup. No Windows or
   Linux run is recorded; `--permission-mode smart`/`dangerous` and `--resume-last` are
   contract-tested only through the relay.
+- `hermes-delegate`: macOS, Hermes Agent 0.21.5, provider credentials exhausted at the time: a write
+  dispatch against a throwaway repo reached Hermes's configured provider chain, which answered
+  HTTP 429 (insufficient balance), and the relay reported `status: "failed"`, exit 1, the Hermes
+  error in `error` and `finalMessage`, a captured `sessionId`, and no touched files. No run has
+  completed an edit through Hermes, so the success path and `touchedFiles` after a real edit are not
+  claimed. Contract-tested against a fake `hermes`: argv exactness (`chat --query-file -Q --format
+  stream-json --in`), stream-json parsing with plain notices interleaved, a result event that fails
+  while the process exits 0, exit 0 with no result event reported `failed`, `--read-only` refused,
+  lane dials, bounded version preflight, missing binary, and whole-process-tree timeout/abort
+  cleanup. No Windows or Linux run is recorded.
+- `openclaw-delegate`: contract-tested only, against a fake `openclaw` and OpenClaw's published
+  `agent exec` documentation: argv exactness (`agent exec --message-file - --json --timeout`), the
+  brief on stdin, JSON envelope parsing with a notice line before it, an envelope that fails while
+  the process exits 0, exit 0 with no envelope reported `failed`, exit 2 reported `timeout`,
+  `--read-only` refused, lane dials, bounded version preflight, missing binary, and
+  whole-process-tree timeout/abort cleanup. No live run is recorded: on the machine the relay was
+  written on, OpenClaw's agent database needed `openclaw doctor --fix`, which migrates the user's own
+  state and was not run. The envelope field names come from the documentation, not from a run.
 - `opencode-delegate`, `vibe-delegate` — contract-tested only: argument validation, bounded version
   preflight, missing binary, result parsing, and whole-process-tree timeout/abort cleanup. No
   end-to-end run is recorded here.
@@ -454,7 +486,7 @@ Per skill — platform, CLI version, and what the run exercised:
 
 Not yet verified: native Windows launches for a directly spawned `claude.exe` (the npm `claude.cmd`
 shim path has a run above), exact-head `cline`, `grok`, `kimi`, `muse`,
-`pi`, `qoder`, `vibe`, `omp`, and `devin` (`codex`/`opencode`/`grok`/`commandcode` have contract-tested `.cmd` shim handling;
+`pi`, `qoder`, `vibe`, `omp`, `devin`, `hermes`, and `openclaw` (`codex`/`opencode`/`grok`/`commandcode` have contract-tested `.cmd` shim handling;
 Cursor serializes a pre-joined, quoted command; Qoder and Vibe target their documented native executables).
 Claude's own shell sandbox is unsupported on native Windows regardless of launch mechanics, upstream
 Vibe officially targets UNIX, and Muse's upstream launcher is UNIX-only. A native Linux `cursor-agent` run is unverified. The full delegate →

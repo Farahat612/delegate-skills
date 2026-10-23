@@ -25,6 +25,8 @@ import { runZcode } from "./zcode.mjs";
 import { runGrokGitTrust } from "./grok-git-trust.mjs";
 import { runMuse } from "./muse.mjs";
 import { runDevin } from "./devin.mjs";
+import { runHermes } from "./hermes.mjs";
+import { runOpenclaw } from "./openclaw.mjs";
 
 export const runners = [
   ["package-shape", runPackageShape],
@@ -53,5 +55,7 @@ export const runners = [
   ["zcode", runZcode],
   ["muse", runMuse],
   ["devin", runDevin],
+  ["hermes", runHermes],
+  ["openclaw", runOpenclaw],
   ["delegate-setup", runDelegateSetup],
 ];

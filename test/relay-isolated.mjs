@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const RELAYS = ["claude", "cline", "codex", "opencode", "agy", "grok", "kimi", "muse", "qoder", "vibe", "cursor", "pi", "omp", "aider", "copilot", "warp", "zcode", "commandcode", "devin"];
+const RELAYS = ["claude", "cline", "codex", "opencode", "agy", "grok", "kimi", "muse", "qoder", "vibe", "cursor", "pi", "omp", "aider", "copilot", "warp", "zcode", "commandcode", "devin", "hermes", "openclaw"];
 let failed = 0;
 const check = (name, condition) => {
   console.log(`${condition ? "  ok " : "  FAIL"}  ${name}`);

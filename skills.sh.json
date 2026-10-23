@@ -23,7 +23,9 @@
         "warp-delegate",
         "zcode-delegate",
         "commandcode-delegate",
-        "devin-delegate"
+        "devin-delegate",
+        "hermes-delegate",
+        "openclaw-delegate"
       ]
     },
     {

@@ -316,6 +316,29 @@ if (["devin-success", "devin-rejected", "devin-rejected-silent"].includes(proces
   if (!rejected) console.log("fake devin completed");
   process.exit(0);
 }
+if (["hermes-success", "hermes-failed", "hermes-failed-exit0", "hermes-no-result"].includes(process.env.SMOKE_MODE)) {
+  // Hermes single-query mode: the brief arrives via --query-file, stdout is stream-json
+  // events interleaved with plain notices, and stderr ends with a `session_id:` line.
+  const queryAt = args.indexOf("--query-file");
+  const brief = queryAt !== -1 ? fs.readFileSync(args[queryAt + 1], "utf8") : null;
+  if (process.env.SMOKE_ARGS_FILE) fs.writeFileSync(process.env.SMOKE_ARGS_FILE, JSON.stringify({ args, brief, cwd: process.cwd() }));
+  const failed = process.env.SMOKE_MODE === "hermes-failed" || process.env.SMOKE_MODE === "hermes-failed-exit0";
+  console.log("Warning: Unknown toolsets: moa, stt");
+  console.log(JSON.stringify({ type: "system", subtype: "init", model: "", session_id: "hermes-smoke-session" }));
+  console.log("not a json notice line");
+  if (process.env.SMOKE_MODE !== "hermes-no-result") {
+    console.log(JSON.stringify({
+      type: "result",
+      session_id: "hermes-smoke-session",
+      exit_code: failed ? 1 : 0,
+      text: failed ? "provider exhausted" : "fake hermes completed",
+      tokens: { input: 5, output: 2, total: 7 },
+      ...(failed ? { error: "HTTP 429: exhausted" } : {}),
+    }));
+  }
+  console.error("\nsession_id: hermes-smoke-session");
+  process.exit(process.env.SMOKE_MODE === "hermes-failed" ? 1 : 0);
+}
 if (process.env.SMOKE_MODE === "qoder-success") {
   fs.writeFileSync(process.env.SMOKE_ARGS_FILE, JSON.stringify(args));
   console.log(JSON.stringify({
@@ -561,6 +584,36 @@ if (["omp-success", "omp-error"].includes(process.env.SMOKE_MODE)) {
     } else {
       console.log(JSON.stringify(resultEvent));
     }
+  });
+} else if (["openclaw-success", "openclaw-failed", "openclaw-failed-exit0", "openclaw-deadline", "openclaw-garbled", "openclaw-notice"].includes(process.env.SMOKE_MODE)) {
+  // OpenClaw `agent exec --message-file - --json`: the brief arrives on stdin and stdout is
+  // one JSON envelope (a notice line may precede it). Exit 1 is an error, 2 its own deadline.
+  let brief = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { brief += chunk; });
+  process.stdin.on("end", () => {
+    if (process.env.SMOKE_ARGS_FILE) fs.writeFileSync(process.env.SMOKE_ARGS_FILE, JSON.stringify({ args, brief, cwd: process.cwd() }));
+    const mode = process.env.SMOKE_MODE;
+    if (mode === "openclaw-garbled") {
+      console.log("this is not json");
+      process.exit(0);
+    }
+    const failed = mode === "openclaw-failed" || mode === "openclaw-failed-exit0" || mode === "openclaw-deadline";
+    if (mode === "openclaw-notice") console.log("openclaw notice: using the ambient config");
+    console.log(JSON.stringify(failed
+      ? { ok: false, status: "error", error: { type: "model", message: mode === "openclaw-deadline" ? "agent deadline elapsed" : "provider refused" }, sessionId: "openclaw-smoke-session" }
+      : {
+        ok: true,
+        status: "ok",
+        final: "fake openclaw completed",
+        payloads: [{ text: "fake openclaw completed" }],
+        usage: { input: 5, output: 2, total: 7 },
+        costUsd: 0.001,
+        model: "gpt-smoke",
+        provider: "openai",
+        sessionId: "openclaw-smoke-session",
+      }));
+    process.exit(mode === "openclaw-failed" ? 1 : mode === "openclaw-deadline" ? 2 : 0);
   });
 } else if (process.env.SMOKE_MODE === "opencode-success") {
   let brief = "";

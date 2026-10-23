@@ -31,6 +31,8 @@ import {
   ALL_DIALS,
   CLAUDE_EFFORT,
   MUSE_EFFORT,
+  HERMES_EFFORT,
+  OPENCLAW_THINKING,
   COPILOT_EFFORT,
   OMP_THINKING,
   CODEX_SANDBOX,
@@ -235,6 +237,12 @@ function validateDialValue(implementer, field, value, laneName, label) {
     if (implementer === "muse" && !MUSE_EFFORT.includes(value)) {
       return `${label}: lane ${laneName}.effort must be one of: ${MUSE_EFFORT.join(", ")}`;
     }
+    if (implementer === "hermes" && !HERMES_EFFORT.includes(value)) {
+      return `${label}: lane ${laneName}.effort must be one of: ${HERMES_EFFORT.join(", ")}`;
+    }
+    if (implementer === "openclaw" && !OPENCLAW_THINKING.includes(value)) {
+      return `${label}: lane ${laneName}.effort must be one of: ${OPENCLAW_THINKING.join(", ")}`;
+    }
     if (
       (implementer === "codex" || implementer === "grok" || implementer === "commandcode") &&
       !/^[a-z][a-z0-9-]*$/i.test(value)
@@ -300,6 +308,8 @@ function validateModelOrProvider(implementer, field, value, laneName, label) {
     implementer === "muse" ||
     // devin's relay applies the same shell-safe token check to --model and spawns no shell.
     implementer === "devin" ||
+    // hermes's relay token-validates --provider and --model the same way and spawns no shell.
+    implementer === "hermes" ||
     // codex (and any other win32 shell:true relay) must not accept cmd metacharacters in -m.
     implementer === "codex" ||
     IMPLEMENTER_BY_KEY[implementer]?.winShell

@@ -65,12 +65,21 @@ later-edited project config fails closed until it is reviewed and written again 
 | `warp` | warp-delegate | `oz` | model, timeout |
 | `zcode` | zcode-delegate | `zcode` | permissionMode, timeout, readOnly |
 | `devin` | devin-delegate | `devin` | model, timeout, readOnly |
+| `hermes` | hermes-delegate | `hermes` | provider, model, **effort** (`--reasoning`), timeout |
+| `openclaw` | openclaw-delegate | `openclaw` | model, **effort** (`--thinking`), timeout |
 
 ZCode carries its `--mode` as `permissionMode`, and only `plan` and `yolo` are accepted: ZCode also
 documents `build` and `edit`, but a headless run has no permission client, so those two block every
 write tool and exit 0 having changed nothing. ZCode has no `--model` flag — the model is chosen in
 the CLI's own config file — so `model` is not a dial for `zcode` lanes. ZCode also ships its CLI
 inside the desktop app rather than on PATH, so discovery falls back to the installed app bundle.
+
+Hermes and OpenClaw have no `readOnly` dial: neither CLI has a read-only mode or sandbox to enforce one, so
+their relays refuse `--read-only` and a lane that sets `readOnly` on them fails validation. Hermes `effort` is
+`--reasoning` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`); OpenClaw `effort` is
+`--thinking` (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`, `ultra`). Both pick the
+account from the environment (`HERMES_HOME`; `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH`), not from a lane
+dial.
 
 OpenCode uses `variant` for reasoning intensity, not `effort`. Do not write `effort` on an `opencode` lane.
 Muse `effort` is `--reasoning-effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`). Muse `--provider echo|meta` is relay-only — do not write `provider` on a `muse` lane.

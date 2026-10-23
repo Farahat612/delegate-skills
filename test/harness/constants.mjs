@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-export const SKILLS = ["claude", "cline", "codex", "opencode", "agy", "grok", "kimi", "muse", "qoder", "vibe", "cursor", "pi", "omp", "aider", "copilot", "warp", "zcode", "commandcode", "devin"];
+export const SKILLS = ["claude", "cline", "codex", "opencode", "agy", "grok", "kimi", "muse", "qoder", "vibe", "cursor", "pi", "omp", "aider", "copilot", "warp", "zcode", "commandcode", "devin", "hermes", "openclaw"];
 
 export const EXTRA_ARGS = {
   claude: [],
@@ -22,6 +22,8 @@ export const EXTRA_ARGS = {
   zcode: [],
   commandcode: [],
   devin: [],
+  hermes: [],
+  openclaw: [],
 };
 
 export const WIN = process.platform === "win32";
