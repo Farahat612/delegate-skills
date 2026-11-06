@@ -15,10 +15,20 @@ const READ_ONLY_ALLOWED_TOOLS = [
   "shell(tail:*)",
   "shell(rg:*)",
   "shell(grep:*)",
-  "shell(find:*)",
   "shell(pwd)",
-  "shell(git:*)",
+  "shell(git status:*)",
+  "shell(git diff:*)",
+  "shell(git log:*)",
+  "shell(git show:*)",
+  "shell(git blame:*)",
+  "shell(git ls-files:*)",
+  "shell(git rev-parse:*)",
+  "shell(git grep:*)",
 ];
+// A read-only run must never be able to push, fetch, stash, delete branches or delete files via find.
+for (const risky of ["shell(git:*)", "shell(find:*)"]) {
+  if (READ_ONLY_ALLOWED_TOOLS.includes(risky)) throw new Error(`read-only allowlist must not include ${risky}`);
+}
 const READ_ONLY_DENIED_TOOLS = [
   "shell(git add:*)",
   "shell(git commit:*)",

@@ -121,9 +121,17 @@ const READ_ONLY_ALLOWED_TOOLS = [
   "shell(tail:*)",
   "shell(rg:*)",
   "shell(grep:*)",
-  "shell(find:*)",
   "shell(pwd)",
-  "shell(git:*)",
+  // Only git subcommands that cannot change the tree, refs, config or a remote.
+  // (A broad shell(git:*) would let through push, fetch, bare stash, branch -D, tag, apply, switch.)
+  "shell(git status:*)",
+  "shell(git diff:*)",
+  "shell(git log:*)",
+  "shell(git show:*)",
+  "shell(git blame:*)",
+  "shell(git ls-files:*)",
+  "shell(git rev-parse:*)",
+  "shell(git grep:*)",
 ];
 const READ_ONLY_DENIED_TOOLS = [
   "shell(git add:*)",
