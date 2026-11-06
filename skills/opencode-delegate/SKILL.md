@@ -15,6 +15,8 @@ metadata:
 
 # OpenCode Delegate
 
+**On Mohamed's machine:** the model comes from `lanes` (skill `spread`), not from you. OpenCode Go (`opencode-go/...`) is metered money: only small implementation tasks on its cheap models, never reviews or audits, never Kimi, never the `max` variant. If you must name a model yourself, use a free one (`opencode/*-free`). Long work is split into several fresh runs of about 60 steps, not one long session.
+
 You are the **orchestrator**. This skill lets you hand a bounded coding task to a separate
 **implementer** — the OpenCode CLI — then review what it produced and land it yourself. You write
 the brief and own the judgment; OpenCode does the typing in its own session; you verify and commit.
