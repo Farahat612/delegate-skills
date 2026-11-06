@@ -5,21 +5,71 @@ import { join } from "node:path";
 // Must match RESUME_DIRECTIVE in skills/copilot-delegate/scripts/relay.mjs
 const RESUME_DIRECTIVE =
   "Execute the instructions in the referenced file, then report what you did. Do not just summarize the file: ";
+const READ_ONLY_ALLOWED_TOOLS = [
+  "read",
+  "view",
+  "glob",
+  "shell(ls:*)",
+  "shell(cat:*)",
+  "shell(head:*)",
+  "shell(tail:*)",
+  "shell(rg:*)",
+  "shell(grep:*)",
+  "shell(find:*)",
+  "shell(pwd)",
+  "shell(git:*)",
+];
+const READ_ONLY_DENIED_TOOLS = [
+  "shell(git add:*)",
+  "shell(git commit:*)",
+  "shell(git clean:*)",
+  "shell(git checkout:*)",
+  "shell(git restore:*)",
+  "shell(git reset:*)",
+  "shell(git rm:*)",
+  "shell(git mv:*)",
+  "shell(git config:*)",
+  "shell(git update-index:*)",
+  "shell(git worktree add:*)",
+  "shell(git worktree remove:*)",
+  "shell(git stash apply:*)",
+  "shell(git stash pop:*)",
+  "shell(git stash drop:*)",
+  "shell(git stash clear:*)",
+  "shell(git rebase:*)",
+  "shell(git merge:*)",
+  "shell(git cherry-pick:*)",
+  "shell(git revert:*)",
+  "shell(rm:*)",
+  "shell(mv:*)",
+  "shell(cp:*)",
+  "shell(touch:*)",
+  "shell(mkdir:*)",
+  "shell(sh:*)",
+  "shell(bash:*)",
+  "shell(zsh:*)",
+  "shell(python:*)",
+  "shell(node:*)",
+  "shell(perl:*)",
+  "shell(ruby:*)",
+];
 
 export async function runCopilot(h) {
 for (const scenario of [
   {
     name: "default",
     relayArgs: [],
-    forwarded: ["--output-format", "json", "--no-color", "--stream", "off"],
+    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--allow-all-tools"],
     readOnly: false,
-    allowAllTools: false,
+    allowAllTools: true,
     resumed: false,
   },
   {
     name: "read only",
     relayArgs: ["--read-only"],
-    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--mode", "plan"],
+    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--mode", "plan",
+      ...READ_ONLY_ALLOWED_TOOLS.flatMap((tool) => ["--allow-tool", tool]),
+      ...READ_ONLY_DENIED_TOOLS.flatMap((tool) => ["--deny-tool", tool])],
     readOnly: true,
     allowAllTools: false,
     resumed: false,
@@ -35,25 +85,25 @@ for (const scenario of [
   {
     name: "session resume",
     relayArgs: ["--session", "copilot-session-1"],
-    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--resume=copilot-session-1"],
+    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--allow-all-tools", "--resume=copilot-session-1"],
     readOnly: false,
-    allowAllTools: false,
+    allowAllTools: true,
     resumed: true,
   },
   {
     name: "resume last",
     relayArgs: ["--resume-last"],
-    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--continue"],
+    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--allow-all-tools", "--continue"],
     readOnly: false,
-    allowAllTools: false,
+    allowAllTools: true,
     resumed: true,
   },
   {
     name: "model and effort",
     relayArgs: ["--model", "fake-model", "--effort", "high"],
-    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--model", "fake-model", "--effort", "high"],
+    forwarded: ["--output-format", "json", "--no-color", "--stream", "off", "--allow-all-tools", "--model", "fake-model", "--effort", "high"],
     readOnly: false,
-    allowAllTools: false,
+    allowAllTools: true,
     resumed: false,
   },
 ]) {
@@ -76,6 +126,10 @@ for (const scenario of [
   h.check(`copilot ${scenario.name}: relay exits zero`, run.status === 0);
   const expectedArgv = [
     ...scenario.forwarded,
+    ...(scenario.readOnly
+      ? ["--allow-tool", `read(${join(outDir, "brief.txt")})`,
+        "--allow-tool", `write(${outDir}/**)`]
+      : []),
     "-p", scenario.resumed
       ? `${RESUME_DIRECTIVE}@${join(outDir, "brief.txt")}`
       : `@${join(outDir, "brief.txt")}`,

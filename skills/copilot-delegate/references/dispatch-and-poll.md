@@ -31,8 +31,8 @@ node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
 | `--lane <name>` | Fleet lane from `delegate-setup` config. Applies that lane's dials; fails if the lane's `implementer` is not this relay. Explicit dial flags win. |
 | `--model <name>` | Copilot model (default: copilot's own default, `auto`). Token-validated: letters, digits, `. _ : / -`. |
 | `--effort <level>` | Reasoning effort (`low`\|`medium`\|`high`\|`xhigh`\|`max`). Rejected before dispatch if unknown. |
-| `--read-only` | Read-only plan mode (`--mode plan`); works without `--allow-all-tools`. Mutually exclusive with `--allow-all-tools`. |
-| `--allow-all-tools` | Full tool autonomy. Without this, headless tool calls are auto-denied and the relay reports `status: "failed"`. Mutually exclusive with `--read-only`. |
+| `--read-only` | Read-only plan mode (`--mode plan`) with the relay's constrained `--allow-tool`/`--deny-tool` policy. Copilot's plan artifact may write only under the relay artifact directory. Mutually exclusive with `--allow-all-tools`. |
+| `--allow-all-tools` | Full tool autonomy. Normal write-capable runs pass this automatically, and the explicit flag remains available. Mutually exclusive with `--read-only`. |
 | `--resume-last` | Resume the most recent session (`--continue`). |
 | `--session <id>` | Resume a specific session (`--resume=<id>`). Mutually exclusive with `--resume-last`. |
 | `--timeout <dur>` | Relay watchdog (default: `30m`; h/m/s strings). Copilot has no timeout flag. |
@@ -114,7 +114,7 @@ The launch is equivalent to:
 
 ```bash
 copilot --output-format json --no-color --stream off \
-  [--mode plan] [--allow-all-tools] \
+  [--mode plan] [read-only --allow-tool/--deny-tool ... | --allow-all-tools] \
   [--continue | --resume=<id>] \
   [--model <name>] [--effort <level>] \
   -p @<brief.txt>

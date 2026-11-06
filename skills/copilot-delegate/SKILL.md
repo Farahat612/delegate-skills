@@ -119,15 +119,17 @@ incomplete, re-dispatch a corrected brief in a fresh run and review again.
 
 ## Autonomy and permissions
 
-Without `--allow-all-tools`, copilot auto-denies tool calls in headless mode: the process exits 0
-but the relay detects the denial events and reports `status: "failed"` with the CLI's own error
-message and a hint to pass `--allow-all-tools`. This is the honest default — the orchestrator sees
-the failure rather than a silent no-op.
+Normal runs pass `--allow-all-tools` so headless Copilot can use the edit and shell tools needed to
+implement a coding task. An explicit `--allow-all-tools` remains supported and is mutually
+exclusive with `--read-only`.
 
-`--allow-all-tools` explicitly grants full tool autonomy. `--read-only` selects `--mode plan`,
-which disables edit tools so project files can't be changed by direct edits; it works without
-`--allow-all-tools`. Shell commands still run in plan mode, so it guards against edits, not
-against everything. The two flags are mutually exclusive.
+`--read-only` selects `--mode plan` and passes Copilot's granular permission rules: the built-in
+`read` permission and an explicit allowlist of read-only shell commands are approved, while
+destructive or interpreter shell commands are denied. The only write permission is scoped to the
+relay's temporary artifact directory because Copilot plan mode must save its session plan there,
+never to the project workspace. Other shell commands have no allow rule and remain unavailable in
+headless mode. This keeps read-only runs useful for inspecting files and repository history without
+granting project edits, file creation, deletion, or arbitrary shell execution.
 
 Copilot also exposes sandbox controls, but they are upstream-experimental (MXC-based, controlled
 via the `/sandbox` command and settings, disabled by default). This relay does not configure them.

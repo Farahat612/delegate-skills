@@ -23,14 +23,12 @@
  * It deliberately does NOT commit. Committing is always the orchestrator's job
  * — after it reviews the diff and re-runs the project gates.
  *
- * Default mode runs without `--allow-all-tools`: headless tool calls are
- * auto-denied by copilot, and the relay detects denial events and reports
- * `status: "failed"` with the CLI's own error message plus a hint to pass
- * `--allow-all-tools`. `--allow-all-tools` explicitly opts in to full tool
- * autonomy. `--read-only` selects `--mode plan`, which disables edit tools so
- * project files can't be changed by direct edits (shell commands still run),
- * and works without `--allow-all-tools`. `--read-only` and `--allow-all-tools`
- * are mutually exclusive.
+ * Normal runs pass `--allow-all-tools` so headless Copilot can use the edit and
+ * shell tools needed for a coding task. `--read-only` selects `--mode plan`
+ * and passes a constrained `--allow-tool`/`--deny-tool` policy: built-in reads
+ * and explicitly listed read-only shell commands are approved, while writes
+ * and other shell commands remain denied. `--read-only` and
+ * `--allow-all-tools` are mutually exclusive.
  *
  * On native Windows `copilot` is an npm-installed `.cmd` shim this relay
  * launches with shell:true. Model and effort values therefore accept only
@@ -48,12 +46,12 @@
  *   --model <name>          Copilot model (default: copilot's own default, `auto`).
  *                           Letters, digits, and . _ : / - only.
  *   --effort <level>        Reasoning effort for this run (low|medium|high|xhigh|max).
- *   --read-only             Read-only plan mode (`--mode plan`); works without
- *                           `--allow-all-tools`. Mutually exclusive with
- *                           `--allow-all-tools`.
+ *   --read-only             Read-only plan mode (`--mode plan`) with a
+ *                           constrained read-only tool allowlist. Mutually
+ *                           exclusive with `--allow-all-tools`.
  *   --allow-all-tools       Pass copilot's `--allow-all-tools` for full tool
- *                           autonomy in headless mode. Without this, headless
- *                           tool calls are auto-denied. Mutually exclusive with
+ *                           autonomy in headless mode. Normal runs use this
+ *                           automatically. Mutually exclusive with
  *                           `--read-only`.
  *   --resume-last           Continue the most recent copilot session for this
  *                           cwd (`--continue`); send only the delta brief.
@@ -110,6 +108,57 @@ const PROBE_TIMEOUT_MS = 10_000;
 // Copilot's documented enum (low|medium|high|xhigh|max).
 const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 const EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+// These are Copilot's documented permission patterns. The allowlist keeps
+// read-only runs useful without approving an arbitrary shell.
+const READ_ONLY_ALLOWED_TOOLS = [
+  "read",
+  "view",
+  "glob",
+  "shell(ls:*)",
+  "shell(cat:*)",
+  "shell(head:*)",
+  "shell(tail:*)",
+  "shell(rg:*)",
+  "shell(grep:*)",
+  "shell(find:*)",
+  "shell(pwd)",
+  "shell(git:*)",
+];
+const READ_ONLY_DENIED_TOOLS = [
+  "shell(git add:*)",
+  "shell(git commit:*)",
+  "shell(git clean:*)",
+  "shell(git checkout:*)",
+  "shell(git restore:*)",
+  "shell(git reset:*)",
+  "shell(git rm:*)",
+  "shell(git mv:*)",
+  "shell(git config:*)",
+  "shell(git update-index:*)",
+  "shell(git worktree add:*)",
+  "shell(git worktree remove:*)",
+  "shell(git stash apply:*)",
+  "shell(git stash pop:*)",
+  "shell(git stash drop:*)",
+  "shell(git stash clear:*)",
+  "shell(git rebase:*)",
+  "shell(git merge:*)",
+  "shell(git cherry-pick:*)",
+  "shell(git revert:*)",
+  "shell(rm:*)",
+  "shell(mv:*)",
+  "shell(cp:*)",
+  "shell(touch:*)",
+  "shell(mkdir:*)",
+  "shell(sh:*)",
+  "shell(bash:*)",
+  "shell(zsh:*)",
+  "shell(python:*)",
+  "shell(node:*)",
+  "shell(perl:*)",
+  "shell(ruby:*)",
+];
 
 const IMPLEMENTER_KEY = "copilot";
 
@@ -245,6 +294,7 @@ function parseArgs(argv) {
   if (opts.effort !== null && !EFFORT_LEVELS.has(opts.effort)) {
     fail(`invalid --effort "${opts.effort}" (expected: ${[...EFFORT_LEVELS].join(", ")})`);
   }
+  if (!opts.readOnly) opts.allowAllTools = true;
   if (parseDuration(opts.timeout) === null) {
     fail(`--timeout "${opts.timeout}" is not a positive schedulable duration; use h/m/s strings like 30m, 90s, or 1h30m (maximum ~24.8 days)`);
   }
@@ -392,9 +442,17 @@ function buildArgv(opts, briefPath) {
 
   if (opts.readOnly) {
     argv.push("--mode", "plan");
-  }
-
-  if (opts.allowAllTools) {
+    for (const tool of READ_ONLY_ALLOWED_TOOLS) {
+      argv.push("--allow-tool", tool);
+    }
+    for (const tool of READ_ONLY_DENIED_TOOLS) {
+      argv.push("--deny-tool", tool);
+    }
+    // Plan mode writes Copilot's session plan. Scope that implementation detail
+    // to the relay artifact directory, never to the project workspace.
+    argv.push("--allow-tool", `read(${briefPath})`);
+    argv.push("--allow-tool", `write(${dirname(briefPath)}/**)`);
+  } else if (opts.allowAllTools) {
     argv.push("--allow-all-tools");
   }
 
@@ -558,12 +616,16 @@ function dispatchToCopilot(opts, run, writeResult, onReady) {
   let lastAssistantMessage = "";
   let denied = false;
   let denialMessage = "";
+  const toolRequests = new Map();
   const stderrTail = [];
 
   const stdoutDecoder = new StringDecoder("utf8");
   const stderrDecoder = new StringDecoder("utf8");
 
   const scan = makeLineScanner((event) => {
+    if (event.type === "tool.execution_start" && event.data?.toolCallId) {
+      toolRequests.set(event.data.toolCallId, event.data);
+    }
     // Skip ephemeral events (mcp status, skills_loaded, tool.execution_start, etc.)
     if (event.ephemeral) return;
 
@@ -582,6 +644,22 @@ function dispatchToCopilot(opts, run, writeResult, onReady) {
     // Copilot wraps the outcome in `data` (event.data.success, event.data.error).
     if (event.type === "tool.execution_complete" && event.data?.success === false) {
       if (event.data.error && event.data.error.code === "denied") {
+        const request = toolRequests.get(event.data.toolCallId);
+        const requestPath = request?.arguments?.path;
+        const missingViewProbe =
+          request?.toolName === "view" &&
+          typeof requestPath === "string" &&
+          !existsSync(requestPath);
+        const outOfScopeViewProbe =
+          request?.toolName === "view" &&
+          typeof requestPath === "string" &&
+          !requestPath.startsWith(`${opts.cd}/`);
+        const startupReadOnlyProbe =
+          request?.toolName === "bash" &&
+          typeof request?.arguments?.command === "string" &&
+          request.arguments.command.startsWith("git status --short && printf '\\nBRANCH\\n'");
+        const deniedReadOnlyShell = opts.readOnly && request?.toolName === "bash";
+        if (missingViewProbe || outOfScopeViewProbe || startupReadOnlyProbe || deniedReadOnlyShell) return;
         denied = true;
         denialMessage = event.data.error.message || "Permission denied";
       }
