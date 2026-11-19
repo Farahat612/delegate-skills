@@ -39,7 +39,8 @@
  * `devin models list` tags `Free`) unless `--allow-paid` is passed, so a run
  * never spends account credits by accident. Aliases such as `swe` are not on
  * the list. The list is static: if devin's pricing changes, check
- * `devin models list` and update FREE_MODELS.
+ * `devin models list` and update FREE_MODELS. FREE_UNTIL holds ids that are
+ * free only through a stated day (a promotion); after it they need --allow-paid.
  *
  * Usage:
  *   node relay.mjs --brief <file> [options]
@@ -113,6 +114,16 @@ const DEFAULT_MODEL = "swe-2-high";
 // Exact ids `devin models list` tags `Free` (SWE-2 family). Everything else,
 // including aliases and the paid `-lightning` variants, needs --allow-paid.
 const FREE_MODELS = new Set(["swe-2-high", "swe-2-medium", "swe-2-max"]);
+// Ids tagged `Free` only for a promotion: free through the given day (inclusive), then they need
+// --allow-paid again until someone re-checks `devin models list`. SWE-2 Flash: free for paid Devin
+// users through 2026-11-30, price after that not announced (checked 2026-11-19).
+const FREE_UNTIL = new Map([
+  ["swe-2-flash-medium", "2026-11-30"],
+  ["swe-2-flash-high", "2026-11-30"],
+  ["swe-2-flash-max", "2026-11-30"],
+]);
+const isFree = (model, today = new Date().toLocaleDateString("en-CA")) =>
+  FREE_MODELS.has(model) || (FREE_UNTIL.has(model) && today <= FREE_UNTIL.get(model));
 const PERMISSION_MODES = new Set(["auto", "accept-edits", "smart", "dangerous"]);
 const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 // Print mode's warning when it refuses a tool call it would have to confirm.
@@ -226,7 +237,7 @@ function parseArgs(argv) {
       fail(`--${flag} value contains unsupported characters (allowed: letters, digits, . _ : / -)`);
     }
   }
-  if (!FREE_MODELS.has(opts.model) && !opts.allowPaid) {
+  if (!isFree(opts.model) && !opts.allowPaid) {
     fail(
       `--model ${opts.model} is not on the free SWE-2 list (${[...FREE_MODELS].join(", ")}); ` +
         "it may spend Devin account credits. Pass --allow-paid to dispatch it anyway, or check `devin models list`",
