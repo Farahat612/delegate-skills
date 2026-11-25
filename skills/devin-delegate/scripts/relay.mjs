@@ -116,11 +116,16 @@ const DEFAULT_MODEL = "swe-2-high";
 const FREE_MODELS = new Set(["swe-2-high", "swe-2-medium", "swe-2-max"]);
 // Ids tagged `Free` only for a promotion: free through the given day (inclusive), then they need
 // --allow-paid again until someone re-checks `devin models list`. SWE-2 Flash: free for paid Devin
-// users through 2026-11-30, price after that not announced (checked 2026-11-19).
+// users through 2026-11-30, price after that not announced (checked 2026-11-19). SWE-2.1: free on
+// paid Devin plans in the desktop app and command line through 2026-12-08, price after that not
+// verified (checked 2026-11-25); its `-lightning` (Ultrafast) variants are paid from day one.
 const FREE_UNTIL = new Map([
   ["swe-2-flash-medium", "2026-11-30"],
   ["swe-2-flash-high", "2026-11-30"],
   ["swe-2-flash-max", "2026-11-30"],
+  ["swe-2-1-medium", "2026-12-08"],
+  ["swe-2-1-high", "2026-12-08"],
+  ["swe-2-1-max", "2026-12-08"],
 ]);
 const isFree = (model, today = new Date().toLocaleDateString("en-CA")) =>
   FREE_MODELS.has(model) || (FREE_UNTIL.has(model) && today <= FREE_UNTIL.get(model));
